@@ -7,6 +7,27 @@ import seaborn as sns
 from sklearn.cluster import KMeans
 from io import BytesIO
 import warnings
+import sys
+import subprocess
+import os
+
+# Function to check and install required packages
+def check_and_install_packages():
+    """Install required packages if missing"""
+    required_packages = ['streamlit', 'numpy', 'pandas', 'matplotlib', 
+                        'seaborn', 'scikit-learn', 'pickle5']
+    for package in required_packages:
+        try:
+            __import__(package.replace('-', '_'))
+        except ImportError:
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+                st.success(f"Successfully installed {package}")
+            except:
+                st.warning(f"Failed to install {package}")
+
+# Run package check
+check_and_install_packages()
 
 # Suppress version warnings
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -14,16 +35,25 @@ warnings.filterwarnings('ignore', category=UserWarning)
 # Page config
 st.set_page_config(page_title="Customer Segmentation", layout="wide")
 
-# Load models
-try:
-    kmeans_model = pickle.load(open("kmeans_model.pkl", "rb"))
-    dbscan_model = pickle.load(open("dbscan_model.pkl", "rb"))
-    scaler = pickle.load(open("scaler.pkl", "rb"))
-    models_loaded = True
-except:
-    st.warning("⚠️ Model files not found. Using demo mode.")
+# Check if model files exist
+model_files = ['kmeans_model.pkl', 'dbscan_model.pkl', 'scaler.pkl']
+missing_models = [f for f in model_files if not os.path.exists(f)]
+
+# Load models with fallback
+if missing_models:
+    st.warning(f"⚠️ Missing model files: {missing_models}. Using demo mode.")
     models_loaded = False
     scaler = None
+else:
+    try:
+        kmeans_model = pickle.load(open("kmeans_model.pkl", "rb"))
+        dbscan_model = pickle.load(open("dbscan_model.pkl", "rb"))
+        scaler = pickle.load(open("scaler.pkl", "rb"))
+        models_loaded = True
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+        models_loaded = False
+        scaler = None
 
 # Title
 st.title("🎯 Customer Segmentation Dashboard")
@@ -83,8 +113,12 @@ user_data = np.array([[income, score]])
 user_kmeans = kmeans.predict(user_data)[0]
 
 if models_loaded and scaler is not None:
-    user_scaled = scaler.transform(user_data)
-    user_dbscan = dbscan_model.fit_predict(user_scaled)[0]
+    try:
+        user_scaled = scaler.transform(user_data)
+        user_dbscan = dbscan_model.fit_predict(user_scaled)[0]
+    except:
+        user_dbscan = -1
+        st.warning("DBSCAN prediction failed, showing as outlier")
 else:
     user_dbscan = -1
 
@@ -102,6 +136,9 @@ with col1:
     """.format(user_kmeans, n_clusters), unsafe_allow_html=True)
 
 with col2:
+    cluster_display = "Outlier" if user_dbscan == -1 else f"Cluster {user_dbscan}"
+    cluster_description = "Anomaly detected" if user_dbscan == -1 else "Normal pattern"
+    
     st.markdown("""
     <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
                 padding: 20px; border-radius: 10px; text-align: center;'>
@@ -109,10 +146,7 @@ with col2:
         <h1 style='color: white; margin: 10px 0;'>{}</h1>
         <p style='color: white; margin: 0;'>{}</p>
     </div>
-    """.format(
-        "Outlier" if user_dbscan == -1 else f"Cluster {user_dbscan}",
-        "Anomaly detected" if user_dbscan == -1 else "Normal pattern"
-    ), unsafe_allow_html=True)
+    """.format(cluster_display, cluster_description), unsafe_allow_html=True)
 
 with col3:
     st.markdown("""
@@ -282,3 +316,12 @@ st.markdown("""
     <p>🎯 Your customer profile is highlighted in red on the scatter plot</p>
 </div>
 """, unsafe_allow_html=True)
+
+# Debug info (can be removed in production)
+with st.sidebar:
+    st.markdown("---")
+    with st.expander("🔧 Debug Info"):
+        st.write(f"Models loaded: {models_loaded}")
+        st.write(f"Scaler available: {scaler is not None}")
+        st.write(f"User DBSCAN cluster: {user_dbscan}")
+        st.write(f"Python version: {sys.version}")
