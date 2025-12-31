@@ -1,0 +1,6 @@
+[server]
+maxUploadSize = 100
+
+[browser]
+serverAddress = "localhost"
+serverPort = 8501
